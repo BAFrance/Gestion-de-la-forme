@@ -153,6 +153,40 @@ with st.sidebar.form("create_player_form"):
 
 joueurs = get_joueurs(club_id)
 
+st.sidebar.subheader("Gestion des joueurs")
+
+if joueurs:
+    joueur_options = {j["nom"]: j["id"] for j in joueurs}
+    joueur_selection = st.sidebar.selectbox(
+        "Sélectionner un joueur",
+        list(joueur_options.keys()),
+        key="manage_player"
+    )
+
+    joueur_id = joueur_options[joueur_selection]
+
+    # Modifier le nom
+    nouveau_nom = st.sidebar.text_input(
+        "Renommer le joueur",
+        value=joueur_selection
+    )
+
+    if st.sidebar.button("✏️ Modifier"):
+        if nouveau_nom.strip():
+            supabase.table("joueurs").update({
+                "nom": nouveau_nom.strip()
+            }).eq("id", joueur_id).execute()
+
+            st.sidebar.success("Nom modifié")
+            st.rerun()
+
+    # Supprimer joueur
+    if st.sidebar.button("🗑️ Supprimer le joueur"):
+        supabase.table("joueurs").delete().eq("id", joueur_id).execute()
+
+        st.sidebar.warning("Joueur supprimé")
+        st.rerun()
+
 tab1, tab2, tab3 = st.tabs([
     "📥 Saisie joueur",
     "📊 Dashboard équipe",
