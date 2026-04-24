@@ -47,6 +47,24 @@ def calcul_charge(rpe, duree):
     return rpe * duree
 
 
+def get_statut(indice_forme):
+    if indice_forme >= 7:
+        return "🟢 OK"
+    if indice_forme >= 5:
+        return "🟠 À surveiller"
+    return "🔴 Risque"
+
+
+def color_status(value):
+    if "🟢" in str(value):
+        return "background-color: #d4edda"
+    if "🟠" in str(value):
+        return "background-color: #fff3cd"
+    if "🔴" in str(value):
+        return "background-color: #f8d7da"
+    return ""
+
+
 st.sidebar.header("Paramètres")
 
 clubs = get_clubs()
@@ -147,6 +165,7 @@ with tab1:
                 }).execute()
 
                 st.success("Séance enregistrée.")
+                st.rerun()
 
 with tab2:
     st.header("Dashboard équipe")
@@ -171,13 +190,6 @@ with tab2:
                 charge = calcul_charge(rpe, duree)
                 indice_forme = calcul_indice_forme(fatigue, courbatures, sommeil)
 
-                if indice_forme >= 7:
-                    statut = "🟢 OK"
-                elif indice_forme >= 5:
-                    statut = "🟠 À surveiller"
-                else:
-                    statut = "🔴 Risque"
-
                 all_rows.append({
                     "Joueur": joueur["nom"],
                     "Date": last_session["date"],
@@ -188,7 +200,7 @@ with tab2:
                     "Durée": duree,
                     "Charge": charge,
                     "Indice forme": indice_forme,
-                    "Statut": statut,
+                    "Statut": get_statut(indice_forme),
                 })
 
         if not all_rows:
@@ -196,13 +208,19 @@ with tab2:
         else:
             df_team = pd.DataFrame(all_rows)
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
 
             col1.metric("Joueurs suivis", len(df_team))
             col2.metric("Charge moyenne", round(df_team["Charge"].mean(), 1))
             col3.metric("Indice forme moyen", round(df_team["Indice forme"].mean(), 1))
+            col4.metric("Joueurs à risque", len(df_team[df_team["Statut"].str.contains("🔴")]))
 
-            st.dataframe(df_team, use_container_width=True)
+            st.subheader("État du collectif")
+
+            st.dataframe(
+                df_team.style.map(color_status, subset=["Statut"]),
+                use_container_width=True
+            )
 
 with tab3:
     st.header("Fiche joueur")
@@ -238,17 +256,30 @@ with tab3:
 
             df = df.sort_values("date")
 
+            last_form = df.iloc[-1]["Indice forme"]
+            last_charge = df.iloc[-1]["Charge"]
+            statut = get_statut(last_form)
+
+            if last_form >= 7:
+                st.success(f"Forme actuelle : {last_form} — {statut}")
+            elif last_form >= 5:
+                st.warning(f"Forme actuelle : {last_form} — {statut}")
+            else:
+                st.error(f"Forme actuelle : {last_form} — {statut}")
+
             col1, col2, col3 = st.columns(3)
 
             col1.metric("Séances", len(df))
-            col2.metric("Charge moyenne", round(df["Charge"].mean(), 1))
-            col3.metric("Indice forme moyen", round(df["Indice forme"].mean(), 1))
+            col2.metric("Dernière charge", int(last_charge))
+            col3.metric("Charge moyenne", round(df["Charge"].mean(), 1))
+
+            df_chart = df.set_index("date")
 
             st.subheader("Évolution de la charge")
-            st.line_chart(df.set_index("date")["Charge"])
+            st.line_chart(df_chart["Charge"], use_container_width=True)
 
             st.subheader("Évolution de l'indice de forme")
-            st.line_chart(df.set_index("date")["Indice forme"])
+            st.line_chart(df_chart["Indice forme"], use_container_width=True)
 
             st.subheader("Historique complet")
             st.dataframe(
