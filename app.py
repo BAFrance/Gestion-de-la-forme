@@ -1,11 +1,12 @@
 import pandas as pd
 import streamlit as st
 from supabase import create_client
+from datetime import date, timedelta
 
-st.set_page_config(page_title="Suivi de la forme", page_icon="", layout="wide")
+st.set_page_config(page_title="Suivi forme rugby", page_icon="🏉", layout="wide")
 
-st.title("Suivi de la forme")
-st.caption("Suivi RPE, fatigue, sommeil, courbatures et charge d'entraînement.")
+st.title("Suivi de la forme rugby 🏉")
+st.caption("Suivi RPE, fatigue, sommeil, courbatures, charge d'entraînement et tendances.")
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -18,11 +19,25 @@ def get_clubs():
 
 
 def get_joueurs(club_id):
-    return supabase.table("joueurs").select("*").eq("club_id", club_id).order("nom").execute().data
+    return (
+        supabase.table("joueurs")
+        .select("*")
+        .eq("club_id", club_id)
+        .order("nom")
+        .execute()
+        .data
+    )
 
 
 def get_sessions(joueur_id):
-    return supabase.table("sessions").select("*").eq("joueur_id", joueur_id).order("date").execute().data
+    return (
+        supabase.table("sessions")
+        .select("*")
+        .eq("joueur_id", joueur_id)
+        .order("date")
+        .execute()
+        .data
+    )
 
 
 def calcul_indice_forme(fatigue, courbatures, sommeil):
@@ -58,6 +73,35 @@ def color_status(value):
     if "🔴" in value:
         return "background-color: #f8d7da"
     return ""
+
+
+def prepare_sessions_dataframe(sessions):
+    if not sessions:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(sessions)
+    df["date"] = pd.to_datetime(df["date"])
+    df["Charge (UA)"] = df["rpe"] * df["duree"]
+    df["Indice forme (/10)"] = df.apply(
+        lambda row: calcul_indice_forme(
+            row["fatigue"],
+            row["courbatures"],
+            row["sommeil"]
+        ),
+        axis=1
+    )
+
+    return df.sort_values("date")
+
+
+def filter_by_dates(df, start_date, end_date):
+    if df.empty:
+        return df
+
+    start = pd.to_datetime(start_date)
+    end = pd.to_datetime(end_date)
+
+    return df[(df["date"] >= start) & (df["date"] <= end)]
 
 
 st.sidebar.header("Paramètres")
@@ -143,15 +187,15 @@ with tab1:
                 courbatures = st.slider("Courbatures (/10)", 1, 10, 5)
                 sommeil = st.slider("Qualité du sommeil (/10)", 1, 10, 7)
 
-            duree = st.number_input(
+            duree = st.slider(
                 "Durée de la séance (minutes)",
-                min_value=0,
-                max_value=240,
+                min_value=30,
+                max_value=150,
                 value=90,
                 step=5
             )
 
-            st.caption(f"Charge estimée : {calcul_charge(rpe, int(duree))} UA")
+            st.caption(f"Charge estimée : {calcul_charge(rpe, duree)} UA")
 
             submitted = st.form_submit_button("Enregistrer la séance")
 
@@ -177,6 +221,22 @@ with tab2:
         "Indice forme : < 5 = risque | 5–6.9 = à surveiller | ≥ 7 = OK."
     )
 
+    col_filter1, col_filter2 = st.columns(2)
+
+    with col_filter1:
+        start_date = st.date_input(
+            "Date de début",
+            value=date.today() - timedelta(days=30),
+            key="team_start"
+        )
+
+    with col_filter2:
+        end_date = st.date_input(
+            "Date de fin",
+            value=date.today(),
+            key="team_end"
+        )
+
     if not joueurs:
         st.info("Aucun joueur dans ce club.")
     else:
@@ -184,50 +244,77 @@ with tab2:
 
         for joueur in joueurs:
             sessions = get_sessions(joueur["id"])
+            df_sessions = prepare_sessions_dataframe(sessions)
+            df_sessions = filter_by_dates(df_sessions, start_date, end_date)
 
-            if sessions:
-                last_session = sessions[-1]
+            if not df_sessions.empty:
+                last_session = df_sessions.iloc[-1]
 
-                rpe = last_session["rpe"]
-                fatigue = last_session["fatigue"]
-                courbatures = last_session["courbatures"]
-                sommeil = last_session["sommeil"]
-                duree = last_session["duree"]
+                charge_7j = df_sessions[
+                    df_sessions["date"] >= pd.to_datetime(end_date) - pd.Timedelta(days=7)
+                ]["Charge (UA)"].sum()
 
-                charge = calcul_charge(rpe, duree)
-                indice_forme = calcul_indice_forme(fatigue, courbatures, sommeil)
+                indice_forme = last_session["Indice forme (/10)"]
+                charge = last_session["Charge (UA)"]
 
                 all_rows.append({
                     "Joueur": joueur["nom"],
-                    "Date": last_session["date"],
-                    "RPE (/10)": rpe,
-                    "Fatigue (/10)": fatigue,
-                    "Courbatures (/10)": courbatures,
-                    "Sommeil (/10)": sommeil,
-                    "Durée (min)": duree,
+                    "Dernière date": last_session["date"].date(),
+                    "RPE (/10)": last_session["rpe"],
+                    "Fatigue (/10)": last_session["fatigue"],
+                    "Courbatures (/10)": last_session["courbatures"],
+                    "Sommeil (/10)": last_session["sommeil"],
+                    "Durée (min)": last_session["duree"],
                     "Charge (UA)": charge,
+                    "Charge 7j (UA)": int(charge_7j),
                     "Analyse charge": analyse_charge(charge),
                     "Indice forme (/10)": indice_forme,
                     "Statut": get_statut(indice_forme),
                 })
 
         if not all_rows:
-            st.info("Aucune séance enregistrée pour le moment.")
+            st.info("Aucune séance sur la période sélectionnée.")
         else:
             df_team = pd.DataFrame(all_rows)
+
+            status_order = {
+                "🔴 Risque": 0,
+                "🟠 À surveiller": 1,
+                "🟢 OK": 2,
+            }
+
+            df_team["Ordre"] = df_team["Statut"].map(status_order)
+            df_team = df_team.sort_values(["Ordre", "Indice forme (/10)"])
+            df_team = df_team.drop(columns=["Ordre"])
+
+            nb_ok = len(df_team[df_team["Statut"] == "🟢 OK"])
+            nb_watch = len(df_team[df_team["Statut"] == "🟠 À surveiller"])
+            nb_risk = len(df_team[df_team["Statut"] == "🔴 Risque"])
 
             col1, col2, col3, col4 = st.columns(4)
 
             col1.metric("Joueurs suivis", len(df_team))
-            col2.metric("Charge moyenne", f"{round(df_team['Charge (UA)'].mean(), 1)} UA")
-            col3.metric("Indice forme moyen", f"{round(df_team['Indice forme (/10)'].mean(), 1)} / 10")
-            col4.metric("Joueurs à risque", len(df_team[df_team["Statut"].str.contains("🔴")]))
+            col2.metric("🟢 OK", nb_ok)
+            col3.metric("🟠 À surveiller", nb_watch)
+            col4.metric("🔴 Risque", nb_risk)
+
+            col5, col6 = st.columns(2)
+
+            col5.metric("Charge moyenne", f"{round(df_team['Charge (UA)'].mean(), 1)} UA")
+            col6.metric("Indice forme moyen", f"{round(df_team['Indice forme (/10)'].mean(), 1)} / 10")
 
             st.subheader("État du collectif")
 
             st.dataframe(
                 df_team.style.map(color_status, subset=["Statut", "Analyse charge"]),
                 use_container_width=True
+            )
+
+            st.download_button(
+                "📥 Exporter le dashboard équipe",
+                data=df_team.to_csv(index=False, sep=";").encode("utf-8-sig"),
+                file_name="dashboard_equipe.csv",
+                mime="text/csv"
             )
 
 with tab3:
@@ -244,30 +331,37 @@ with tab3:
         )
         joueur_id = joueur_options[joueur_nom]
 
-        sessions = get_sessions(joueur_id)
+        col_date1, col_date2 = st.columns(2)
 
-        if not sessions:
-            st.info("Aucune séance pour ce joueur.")
-        else:
-            df = pd.DataFrame(sessions)
-
-            df["date"] = pd.to_datetime(df["date"])
-            df["Charge (UA)"] = df["rpe"] * df["duree"]
-            df["Indice forme (/10)"] = df.apply(
-                lambda row: calcul_indice_forme(
-                    row["fatigue"],
-                    row["courbatures"],
-                    row["sommeil"]
-                ),
-                axis=1
+        with col_date1:
+            player_start_date = st.date_input(
+                "Date de début",
+                value=date.today() - timedelta(days=60),
+                key="player_start"
             )
 
-            df = df.sort_values("date")
+        with col_date2:
+            player_end_date = st.date_input(
+                "Date de fin",
+                value=date.today(),
+                key="player_end"
+            )
 
+        sessions = get_sessions(joueur_id)
+        df = prepare_sessions_dataframe(sessions)
+        df = filter_by_dates(df, player_start_date, player_end_date)
+
+        if df.empty:
+            st.info("Aucune séance pour ce joueur sur la période sélectionnée.")
+        else:
             last_form = df.iloc[-1]["Indice forme (/10)"]
             last_charge = df.iloc[-1]["Charge (UA)"]
             statut = get_statut(last_form)
             charge_status = analyse_charge(last_charge)
+
+            charge_7j = df[
+                df["date"] >= pd.to_datetime(player_end_date) - pd.Timedelta(days=7)
+            ]["Charge (UA)"].sum()
 
             if last_form >= 7:
                 st.success(f"Forme actuelle : {last_form} / 10 — {statut}")
@@ -283,11 +377,12 @@ with tab3:
             else:
                 st.success(f"Charge actuelle : {int(last_charge)} UA — {charge_status}")
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
 
             col1.metric("Séances", len(df))
             col2.metric("Dernière charge", f"{int(last_charge)} UA")
             col3.metric("Charge moyenne", f"{round(df['Charge (UA)'].mean(), 1)} UA")
+            col4.metric("Charge 7j", f"{int(charge_7j)} UA")
 
             df_chart = df.set_index("date")
 
@@ -303,18 +398,33 @@ with tab3:
             st.line_chart(df_chart["Indice forme (/10)"], use_container_width=True)
 
             st.subheader("Historique complet")
-            st.dataframe(
-                df[
-                    [
-                        "date",
-                        "rpe",
-                        "fatigue",
-                        "courbatures",
-                        "sommeil",
-                        "duree",
-                        "Charge (UA)",
-                        "Indice forme (/10)",
-                    ]
-                ],
-                use_container_width=True
+            df_export = df[
+                [
+                    "date",
+                    "rpe",
+                    "fatigue",
+                    "courbatures",
+                    "sommeil",
+                    "duree",
+                    "Charge (UA)",
+                    "Indice forme (/10)",
+                ]
+            ].copy()
+
+            df_export = df_export.rename(columns={
+                "date": "Date",
+                "rpe": "RPE (/10)",
+                "fatigue": "Fatigue (/10)",
+                "courbatures": "Courbatures (/10)",
+                "sommeil": "Sommeil (/10)",
+                "duree": "Durée (min)",
+            })
+
+            st.dataframe(df_export, use_container_width=True)
+
+            st.download_button(
+                "📥 Exporter la fiche joueur",
+                data=df_export.to_csv(index=False, sep=";").encode("utf-8-sig"),
+                file_name=f"fiche_{joueur_nom}.csv",
+                mime="text/csv"
             )
