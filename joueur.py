@@ -12,6 +12,8 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+today = str(pd.Timestamp.today().date())
+
 joueurs = (
     supabase.table("joueurs")
     .select("*")
@@ -28,6 +30,20 @@ joueur_options = {joueur["nom"]: joueur["id"] for joueur in joueurs}
 
 joueur_nom = st.selectbox("Ton nom", list(joueur_options.keys()))
 joueur_id = joueur_options[joueur_nom]
+
+deja_rempli = (
+    supabase.table("sessions")
+    .select("*")
+    .eq("joueur_id", joueur_id)
+    .eq("date", today)
+    .execute()
+    .data
+)
+
+if deja_rempli:
+    st.success("Tu as déjà rempli ton état de forme aujourd’hui ✅")
+    st.info("Merci, tu pourras le remplir à nouveau demain.")
+    st.stop()
 
 st.info(
     "Échelles : RPE, fatigue, courbatures et sommeil sont notés de 1 à 10. "
@@ -55,7 +71,7 @@ st.caption(f"Charge estimée : {charge} UA")
 if st.button("Envoyer", use_container_width=True):
     supabase.table("sessions").insert({
         "joueur_id": joueur_id,
-        "date": str(pd.Timestamp.today().date()),
+        "date": today,
         "rpe": rpe,
         "fatigue": fatigue,
         "courbatures": courbatures,
@@ -64,3 +80,4 @@ if st.button("Envoyer", use_container_width=True):
     }).execute()
 
     st.success("Merci, tes données ont été envoyées 💪")
+    st.rerun()
