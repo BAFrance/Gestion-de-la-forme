@@ -4,7 +4,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Formulaire joueur", page_icon="🏉")
 
-st.title("État de forme 🏉")
+st.title("État de forme ")
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
