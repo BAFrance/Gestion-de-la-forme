@@ -134,10 +134,10 @@ club_id = club_options[club_nom]
 
 joueurs = get_joueurs(club_id)
 
-st.sidebar.subheader("Joueurs")
+st.sidebar.subheader("Ajouter un joueur")
 
 with st.sidebar.form("create_player_form"):
-    nouveau_joueur = st.text_input("Ajouter un joueur")
+    nouveau_joueur = st.text_input("Nom du joueur")
     create_player = st.form_submit_button("Ajouter le joueur")
 
     if create_player:
@@ -156,36 +156,42 @@ joueurs = get_joueurs(club_id)
 st.sidebar.subheader("Gestion des joueurs")
 
 if joueurs:
-    joueur_options = {j["nom"]: j["id"] for j in joueurs}
+    joueur_options_sidebar = {joueur["nom"]: joueur["id"] for joueur in joueurs}
+
     joueur_selection = st.sidebar.selectbox(
         "Sélectionner un joueur",
-        list(joueur_options.keys()),
+        list(joueur_options_sidebar.keys()),
         key="manage_player"
     )
 
-    joueur_id = joueur_options[joueur_selection]
+    joueur_id_manage = joueur_options_sidebar[joueur_selection]
 
-    # Modifier le nom
     nouveau_nom = st.sidebar.text_input(
         "Renommer le joueur",
         value=joueur_selection
     )
 
-    if st.sidebar.button("✏️ Modifier"):
+    if st.sidebar.button("✏️ Modifier le nom"):
         if nouveau_nom.strip():
             supabase.table("joueurs").update({
                 "nom": nouveau_nom.strip()
-            }).eq("id", joueur_id).execute()
+            }).eq("id", joueur_id_manage).execute()
 
             st.sidebar.success("Nom modifié")
             st.rerun()
+        else:
+            st.sidebar.warning("Le nom ne peut pas être vide.")
 
-    # Supprimer joueur
-    if st.sidebar.button("🗑️ Supprimer le joueur"):
-        supabase.table("joueurs").delete().eq("id", joueur_id).execute()
+    st.sidebar.warning("Suppression définitive : joueur + toutes ses séances.")
 
-        st.sidebar.warning("Joueur supprimé")
+    if st.sidebar.button("🗑️ Supprimer le joueur et ses données"):
+        supabase.table("sessions").delete().eq("joueur_id", joueur_id_manage).execute()
+        supabase.table("joueurs").delete().eq("id", joueur_id_manage).execute()
+
+        st.sidebar.warning("Joueur et données supprimés")
         st.rerun()
+
+joueurs = get_joueurs(club_id)
 
 tab1, tab2, tab3 = st.tabs([
     "📥 Saisie joueur",
