@@ -132,6 +132,38 @@ club_options = {club["nom"]: club["id"] for club in clubs}
 club_nom = st.sidebar.selectbox("Club sélectionné", list(club_options.keys()))
 club_id = club_options[club_nom]
 
+st.sidebar.subheader("Gestion des clubs")
+
+nouveau_nom_club = st.sidebar.text_input(
+    "Renommer le club",
+    value=club_nom
+)
+
+if st.sidebar.button("✏️ Modifier le nom du club"):
+    if nouveau_nom_club.strip():
+        supabase.table("clubs").update({
+            "nom": nouveau_nom_club.strip()
+        }).eq("id", club_id).execute()
+
+        st.sidebar.success("Club renommé")
+        st.rerun()
+    else:
+        st.sidebar.warning("Le nom du club ne peut pas être vide.")
+
+st.sidebar.warning("Suppression définitive : club + joueurs + séances.")
+
+if st.sidebar.button("🗑️ Supprimer le club et ses données"):
+    joueurs_du_club = get_joueurs(club_id)
+
+    for joueur in joueurs_du_club:
+        supabase.table("sessions").delete().eq("joueur_id", joueur["id"]).execute()
+
+    supabase.table("joueurs").delete().eq("club_id", club_id).execute()
+    supabase.table("clubs").delete().eq("id", club_id).execute()
+
+    st.sidebar.warning("Club, joueurs et séances supprimés")
+    st.rerun()
+
 joueurs = get_joueurs(club_id)
 
 st.sidebar.subheader("Ajouter un joueur")
