@@ -2,9 +2,9 @@ import pandas as pd
 import streamlit as st
 from supabase import create_client
 
-st.set_page_config(page_title="Suivi forme rugby", page_icon="🏉", layout="wide")
+st.set_page_config(page_title="Suivi de la forme", page_icon="", layout="wide")
 
-st.title("Suivi de la forme rugby 🏉")
+st.title("Suivi de la forme rugby")
 st.caption("Suivi RPE, fatigue, sommeil, courbatures et charge d'entraînement.")
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -18,25 +18,11 @@ def get_clubs():
 
 
 def get_joueurs(club_id):
-    return (
-        supabase.table("joueurs")
-        .select("*")
-        .eq("club_id", club_id)
-        .order("nom")
-        .execute()
-        .data
-    )
+    return supabase.table("joueurs").select("*").eq("club_id", club_id).order("nom").execute().data
 
 
 def get_sessions(joueur_id):
-    return (
-        supabase.table("sessions")
-        .select("*")
-        .eq("joueur_id", joueur_id)
-        .order("date")
-        .execute()
-        .data
-    )
+    return supabase.table("sessions").select("*").eq("joueur_id", joueur_id).order("date").execute().data
 
 
 def calcul_indice_forme(fatigue, courbatures, sommeil):
@@ -55,12 +41,21 @@ def get_statut(indice_forme):
     return "🔴 Risque"
 
 
+def analyse_charge(charge):
+    if charge > 500:
+        return "🔴 Charge élevée"
+    if charge < 200:
+        return "🟡 Charge faible"
+    return "🟢 Zone normale"
+
+
 def color_status(value):
-    if "🟢" in str(value):
+    value = str(value)
+    if "🟢" in value:
         return "background-color: #d4edda"
-    if "🟠" in str(value):
+    if "🟠" in value or "🟡" in value:
         return "background-color: #fff3cd"
-    if "🔴" in str(value):
+    if "🔴" in value:
         return "background-color: #f8d7da"
     return ""
 
@@ -123,6 +118,11 @@ tab1, tab2, tab3 = st.tabs([
 with tab1:
     st.header("Saisie de fin d'entraînement")
 
+    st.info(
+        "Échelles : RPE, fatigue, courbatures et sommeil sont notés de 1 à 10. "
+        "La charge est calculée en UA : RPE × durée en minutes."
+    )
+
     if not joueurs:
         st.info("Ajoute au moins un joueur pour commencer.")
     else:
@@ -136,12 +136,12 @@ with tab1:
             col1, col2 = st.columns(2)
 
             with col1:
-                rpe = st.slider("RPE ressenti", 1, 10, 5)
-                fatigue = st.slider("Fatigue", 1, 10, 5)
+                rpe = st.slider("RPE ressenti (/10)", 1, 10, 5)
+                fatigue = st.slider("Fatigue (/10)", 1, 10, 5)
 
             with col2:
-                courbatures = st.slider("Courbatures", 1, 10, 5)
-                sommeil = st.slider("Qualité du sommeil", 1, 10, 7)
+                courbatures = st.slider("Courbatures (/10)", 1, 10, 5)
+                sommeil = st.slider("Qualité du sommeil (/10)", 1, 10, 7)
 
             duree = st.number_input(
                 "Durée de la séance (minutes)",
@@ -150,6 +150,8 @@ with tab1:
                 value=90,
                 step=5
             )
+
+            st.caption(f"Charge estimée : {calcul_charge(rpe, int(duree))} UA")
 
             submitted = st.form_submit_button("Enregistrer la séance")
 
@@ -169,6 +171,11 @@ with tab1:
 
 with tab2:
     st.header("Dashboard équipe")
+
+    st.caption(
+        "Charge : < 200 UA = faible | 200–500 UA = zone normale | > 500 UA = élevée. "
+        "Indice forme : < 5 = risque | 5–6.9 = à surveiller | ≥ 7 = OK."
+    )
 
     if not joueurs:
         st.info("Aucun joueur dans ce club.")
@@ -193,13 +200,14 @@ with tab2:
                 all_rows.append({
                     "Joueur": joueur["nom"],
                     "Date": last_session["date"],
-                    "RPE": rpe,
-                    "Fatigue": fatigue,
-                    "Courbatures": courbatures,
-                    "Sommeil": sommeil,
-                    "Durée": duree,
-                    "Charge": charge,
-                    "Indice forme": indice_forme,
+                    "RPE (/10)": rpe,
+                    "Fatigue (/10)": fatigue,
+                    "Courbatures (/10)": courbatures,
+                    "Sommeil (/10)": sommeil,
+                    "Durée (min)": duree,
+                    "Charge (UA)": charge,
+                    "Analyse charge": analyse_charge(charge),
+                    "Indice forme (/10)": indice_forme,
                     "Statut": get_statut(indice_forme),
                 })
 
@@ -211,14 +219,14 @@ with tab2:
             col1, col2, col3, col4 = st.columns(4)
 
             col1.metric("Joueurs suivis", len(df_team))
-            col2.metric("Charge moyenne", round(df_team["Charge"].mean(), 1))
-            col3.metric("Indice forme moyen", round(df_team["Indice forme"].mean(), 1))
+            col2.metric("Charge moyenne", f"{round(df_team['Charge (UA)'].mean(), 1)} UA")
+            col3.metric("Indice forme moyen", f"{round(df_team['Indice forme (/10)'].mean(), 1)} / 10")
             col4.metric("Joueurs à risque", len(df_team[df_team["Statut"].str.contains("🔴")]))
 
             st.subheader("État du collectif")
 
             st.dataframe(
-                df_team.style.map(color_status, subset=["Statut"]),
+                df_team.style.map(color_status, subset=["Statut", "Analyse charge"]),
                 use_container_width=True
             )
 
@@ -244,8 +252,8 @@ with tab3:
             df = pd.DataFrame(sessions)
 
             df["date"] = pd.to_datetime(df["date"])
-            df["Charge"] = df["rpe"] * df["duree"]
-            df["Indice forme"] = df.apply(
+            df["Charge (UA)"] = df["rpe"] * df["duree"]
+            df["Indice forme (/10)"] = df.apply(
                 lambda row: calcul_indice_forme(
                     row["fatigue"],
                     row["courbatures"],
@@ -256,30 +264,43 @@ with tab3:
 
             df = df.sort_values("date")
 
-            last_form = df.iloc[-1]["Indice forme"]
-            last_charge = df.iloc[-1]["Charge"]
+            last_form = df.iloc[-1]["Indice forme (/10)"]
+            last_charge = df.iloc[-1]["Charge (UA)"]
             statut = get_statut(last_form)
+            charge_status = analyse_charge(last_charge)
 
             if last_form >= 7:
-                st.success(f"Forme actuelle : {last_form} — {statut}")
+                st.success(f"Forme actuelle : {last_form} / 10 — {statut}")
             elif last_form >= 5:
-                st.warning(f"Forme actuelle : {last_form} — {statut}")
+                st.warning(f"Forme actuelle : {last_form} / 10 — {statut}")
             else:
-                st.error(f"Forme actuelle : {last_form} — {statut}")
+                st.error(f"Forme actuelle : {last_form} / 10 — {statut}")
+
+            if last_charge > 500:
+                st.error(f"Charge actuelle : {int(last_charge)} UA — {charge_status}")
+            elif last_charge < 200:
+                st.warning(f"Charge actuelle : {int(last_charge)} UA — {charge_status}")
+            else:
+                st.success(f"Charge actuelle : {int(last_charge)} UA — {charge_status}")
 
             col1, col2, col3 = st.columns(3)
 
             col1.metric("Séances", len(df))
-            col2.metric("Dernière charge", int(last_charge))
-            col3.metric("Charge moyenne", round(df["Charge"].mean(), 1))
+            col2.metric("Dernière charge", f"{int(last_charge)} UA")
+            col3.metric("Charge moyenne", f"{round(df['Charge (UA)'].mean(), 1)} UA")
 
             df_chart = df.set_index("date")
 
             st.subheader("Évolution de la charge")
-            st.line_chart(df_chart["Charge"], use_container_width=True)
+            st.caption("UA = unités arbitraires. Zone normale conseillée : 200 à 500 UA.")
+            df_charge_chart = df_chart[["Charge (UA)"]].copy()
+            df_charge_chart["Zone min (200 UA)"] = 200
+            df_charge_chart["Zone max (500 UA)"] = 500
+            st.line_chart(df_charge_chart, use_container_width=True)
 
             st.subheader("Évolution de l'indice de forme")
-            st.line_chart(df_chart["Indice forme"], use_container_width=True)
+            st.caption("Indice sur 10 : plus le score est haut, meilleur est l'état de forme.")
+            st.line_chart(df_chart["Indice forme (/10)"], use_container_width=True)
 
             st.subheader("Historique complet")
             st.dataframe(
@@ -291,8 +312,8 @@ with tab3:
                         "courbatures",
                         "sommeil",
                         "duree",
-                        "Charge",
-                        "Indice forme",
+                        "Charge (UA)",
+                        "Indice forme (/10)",
                     ]
                 ],
                 use_container_width=True
