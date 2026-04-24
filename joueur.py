@@ -1,34 +1,45 @@
+import pandas as pd
 import streamlit as st
 from supabase import create_client
-import pandas as pd
 
-st.set_page_config(page_title="Formulaire joueur", page_icon="")
+st.set_page_config(page_title="Formulaire joueur", page_icon="🏉")
 
-st.title("État de forme")
-st.info("⏱️ 10 secondes pour remplir — important pour suivre la charge et éviter les blessures.")
+st.title("État de forme 🏉")
+st.caption("Formulaire rapide de fin d'entraînement.")
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-joueurs = supabase.table("joueurs").select("*").order("nom").execute().data
+joueurs = (
+    supabase.table("joueurs")
+    .select("*")
+    .order("nom")
+    .execute()
+    .data
+)
 
 if not joueurs:
     st.info("Aucun joueur disponible.")
     st.stop()
 
-joueur_options = {j["nom"]: j["id"] for j in joueurs}
+joueur_options = {joueur["nom"]: joueur["id"] for joueur in joueurs}
 
 joueur_nom = st.selectbox("Ton nom", list(joueur_options.keys()))
 joueur_id = joueur_options[joueur_nom]
 
+st.info(
+    "Échelles : RPE, fatigue, courbatures et sommeil sont notés de 1 à 10. "
+    "La charge est calculée en UA : RPE × durée."
+)
+
 st.markdown("### Comment tu te sens aujourd’hui ?")
 
-rpe = st.slider("Ressenti effort RPE (/10)", 1, 10, 5)
+rpe = st.slider("RPE ressenti (/10)", 1, 10, 5)
 fatigue = st.slider("Fatigue (/10)", 1, 10, 5)
 courbatures = st.slider("Courbatures (/10)", 1, 10, 5)
-sommeil = st.slider("Sommeil (/10)", 1, 10, 7)
+sommeil = st.slider("Qualité du sommeil (/10)", 1, 10, 7)
 
 duree = st.slider(
     "Durée de la séance (minutes)",
@@ -49,7 +60,7 @@ if st.button("Envoyer", use_container_width=True):
         "fatigue": fatigue,
         "courbatures": courbatures,
         "sommeil": sommeil,
-        "duree": int(duree)
+        "duree": int(duree),
     }).execute()
 
-    st.success("Merci, tes données ont été envoyées")
+    st.success("Merci, tes données ont été envoyées 💪")
