@@ -4,7 +4,7 @@ from supabase import create_client
 
 st.set_page_config(page_title="Suivi de la forme", page_icon="", layout="wide")
 
-st.title("Suivi de la forme rugby")
+st.title("Suivi de la forme")
 st.caption("Suivi RPE, fatigue, sommeil, courbatures et charge d'entraînement.")
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
