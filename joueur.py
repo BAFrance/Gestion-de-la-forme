@@ -2,7 +2,7 @@ import streamlit as st
 from supabase import create_client
 import pandas as pd
 
-st.set_page_config(page_title="Formulaire joueur", page_icon="🏉")
+st.set_page_config(page_title="Formulaire joueur", page_icon="")
 
 st.title("État de forme ")
 
